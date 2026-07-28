@@ -1,0 +1,3 @@
+#!/command/with-contenv bashio
+bashio::log.info "Starting LeapCard Balance..."
+exec python3 /app/main.py
