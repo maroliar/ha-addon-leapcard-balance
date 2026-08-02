@@ -29,21 +29,24 @@ No browser engine is involved at any point — just a handful of well-understood
 - Pure Python login flow, no browser engine required
 - Exposes a single `sensor.leapcard` entity with your current balance as the state
 - Attributes include your name, card number, last update time, and your 10 most recent transactions
+- Publishes over MQTT using [MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) with retained messages, so the entity and its last known values survive a Home Assistant restart
 - Configurable polling interval (defaults to once a day, matching LeapCard's own recommendation to avoid rate limiting)
 
 ## Installation
 
-1. In Home Assistant, go to **Settings → Add-ons → Add-on Store**.
-2. Click the **⋮** menu (top right) → **Repositories**, and add:
+1. Make sure you have a working MQTT broker reachable from Home Assistant (either the official Mosquitto add-on, or an external broker), with the [MQTT integration](https://www.home-assistant.io/integrations/mqtt/) configured in Home Assistant.
+2. In Home Assistant, go to **Settings → Add-ons → Add-on Store**.
+3. Click the **⋮** menu (top right) → **Repositories**, and add:
    ```
    https://github.com/maroliar/ha-addon-leapcard-balance
    ```
-3. Find **LeapCard Balance** in the store and click **Install**.
-4. Go to the **Configuration** tab and fill in:
+4. Find **LeapCard Balance** in the store and click **Install**.
+5. Go to the **Configuration** tab and fill in:
    - `leapcard_username` — your leapcard.ie login email
    - `leapcard_password` — your leapcard.ie password
    - `update_interval_minutes` — how often to check (default: `1440`, once a day)
-5. Start the add-on. Check the **Log** tab to confirm it logged in successfully.
+   - `mqtt.host`, `mqtt.port`, `mqtt.user`, `mqtt.pass` — your broker's connection details
+6. Start the add-on. Check the **Log** tab to confirm it logged in and published to MQTT successfully.
 
 ## The sensor
 
@@ -119,6 +122,7 @@ content: |
 
 - If your account has more than one Leap Card registered, this add-on only reads whichever card is selected by default on leapcard.ie — card selection is planned for a future release.
 - Data on leapcard.ie itself can take 24–48 hours to reflect your most recent trips (this is a limitation of LeapCard's own system, not this add-on).
+- If `mqtt.user`/`mqtt.pass` are left blank (e.g. for a broker allowing anonymous connections), the add-on still sends empty-string credentials rather than omitting authentication — this may be rejected by some broker configurations. Tracked for a future fix.
 
 ## Roadmap
 

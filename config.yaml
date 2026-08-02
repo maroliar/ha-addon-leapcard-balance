@@ -1,5 +1,5 @@
 name: "LeapCard Balance"
-version: "0.1.0"
+version: "0.2.0"
 slug: "leapcard_balance"
 description: "Query LeapCard (TFI Ireland) balance and history."
 url: "https://github.com/maroliar/ha-addon-leapcard-balance"
@@ -7,15 +7,23 @@ arch:
   - amd64
   - aarch64
 init: false
-hassio_api: true
-homeassistant_api: true
 
 options:
   leapcard_username: ""
   leapcard_password: ""
   update_interval_minutes: 1440   # once a day
+  mqtt:
+    host: "core-mosquitto"
+    port: 1883
+    user: ""
+    pass: ""
 
 schema:
   leapcard_username: "str"
   leapcard_password: "password"
   update_interval_minutes: "int(15,10080)"
+  mqtt:
+    host: "str"
+    port: "port"
+    user: "str"
+    pass: "password"

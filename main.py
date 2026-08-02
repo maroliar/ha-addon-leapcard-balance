@@ -1,20 +1,26 @@
 import json
 import os
-import time
+import re
 import sys
+import time
 from datetime import datetime
 
-import requests
+from paho.mqtt.publish import multiple as mqtt_publish_multiple
 
 from leapcard_client import LeapCardClient, LeapCardLoginError
 
 OPTIONS_PATH = "/data/options.json"
 OUTPUT_PATH = "/data/leap_data.json"
-ENTITY_ID = "sensor.leapcard"
 
-# Injected by the Supervisor when homeassistant_api: true is set in config.yaml
-SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN")
-CORE_API_URL = "http://supervisor/core/api"
+DISCOVERY_TOPIC = "homeassistant/sensor/leapcard_balance/config"
+STATE_TOPIC = "leapcard/state"
+ATTRIBUTES_TOPIC = "leapcard/attributes"
+
+DEVICE_INFO = {
+    "identifiers": ["leapcard_balance_addon"],
+    "name": "LeapCard Balance",
+    "manufacturer": "maroliar",
+}
 
 
 def log(msg: str) -> None:
@@ -26,49 +32,72 @@ def load_options() -> dict:
         return json.load(f)
 
 
-def push_to_ha(data: dict) -> None:
-    if not SUPERVISOR_TOKEN:
-        log("WARNING: SUPERVISOR_TOKEN not found - running outside the addon? "
-            "Skipping publish to HA.")
-        return
+def parse_balance(raw: str) -> str:
+    """Normalize the scraped balance (e.g. "€12.34", "12,34 €") to a plain
+    numeric string, so the MQTT state stays numeric for HA statistics/graphs."""
+    cleaned = re.sub(r"[^\d,.-]", "", raw.strip())
+    if "," in cleaned and "." in cleaned:
+        if cleaned.rfind(",") > cleaned.rfind("."):
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+        else:
+            cleaned = cleaned.replace(",", "")
+    elif "," in cleaned:
+        cleaned = cleaned.replace(",", ".")
+    return cleaned
 
-    auth_headers = {
-        "Authorization": f"Bearer {SUPERVISOR_TOKEN}",
-        "Content-Type": "application/json",
+
+def publish_to_mqtt(mqtt_config: dict, data: dict) -> None:
+    # TODO: username_pw_set() is always called, even with empty strings, when
+    # mqtt.user/mqtt.pass are left blank. Some brokers with allow_anonymous
+    # reject that; auth should be omitted entirely in that case.
+    auth = {"username": mqtt_config["user"], "password": mqtt_config["pass"]}
+
+    discovery_payload = {
+        "name": "Leap Card",
+        "unique_id": "leapcard_balance",
+        "default_entity_id": "sensor.leapcard",
+        "state_topic": STATE_TOPIC,
+        "json_attributes_topic": ATTRIBUTES_TOPIC,
+        "unit_of_measurement": "EUR",
+        "device_class": "monetary",
+        "state_class": "measurement",
+        "icon": "mdi:credit-card-outline",
+        "device": DEVICE_INFO,
     }
 
-    payload = {
-        "state": data["balance"],
-        "attributes": {
-            "friendly_name": "Leap Card",
-            "unit_of_measurement": "€",
-            "name": data["name"],
-            "generated_at": data["generated_at"],
-            "card_number": data["card_number"],
-            "history": data["history"],
-        },
+    attributes = {
+        "name": data["name"],
+        "generated_at": data["generated_at"],
+        "card_number": data["card_number"],
+        "history": data["history"],
     }
 
-    resp = requests.post(
-        f"{CORE_API_URL}/states/{ENTITY_ID}",
-        headers=auth_headers,
-        json=payload,
-        timeout=10,
+    messages = [
+        {"topic": DISCOVERY_TOPIC, "payload": json.dumps(discovery_payload),
+         "qos": 1, "retain": True},
+        {"topic": STATE_TOPIC, "payload": data["balance"], "qos": 1, "retain": True},
+        {"topic": ATTRIBUTES_TOPIC, "payload": json.dumps(attributes),
+         "qos": 1, "retain": True},
+    ]
+
+    mqtt_publish_multiple(
+        messages,
+        hostname=mqtt_config["host"],
+        port=mqtt_config["port"],
+        auth=auth,
+        client_id="leapcard_balance",
     )
-
-    if resp.status_code not in (200, 201):
-        log(f"ERROR publishing to HA: {resp.status_code} - {resp.text[:200]}")
-    else:
-        log(f"Published to {ENTITY_ID} successfully.")
+    log("Published to MQTT (retained).")
 
 
-def run_once(username: str, password: str) -> None:
+def fetch_data(username: str, password: str) -> dict:
     client = LeapCardClient(username, password)
     log("Logging in...")
     client.login()
 
     name = client.get_name()
-    balance, _ = client.get_balance()
+    balance_raw, _ = client.get_balance()
+    balance = parse_balance(balance_raw)
     card_number = client.get_card_number()
     history = client.get_history()
 
@@ -86,7 +115,7 @@ def run_once(username: str, password: str) -> None:
     log(f"OK - card {card_number} - balance: EUR{balance} - "
         f"{len(history)} transactions saved to {OUTPUT_PATH}")
 
-    push_to_ha(data)
+    return data
 
 
 def main() -> None:
@@ -94,17 +123,24 @@ def main() -> None:
     username = options["leapcard_username"]
     password = options["leapcard_password"]
     interval_minutes = options.get("update_interval_minutes", 1440)
+    mqtt_config = options.get("mqtt", {})
 
     if not username or not password:
         log("ERROR: leapcard_username / leapcard_password not configured. "
             "Fill them in on the addon's Configuration tab.")
         sys.exit(1)
 
+    if not mqtt_config.get("host"):
+        log("ERROR: mqtt.host not configured. Fill in the MQTT section on "
+            "the addon's Configuration tab (host, port, user, pass).")
+        sys.exit(1)
+
     log(f"Addon started. Interval between queries: {interval_minutes} min.")
 
     while True:
         try:
-            run_once(username, password)
+            data = fetch_data(username, password)
+            publish_to_mqtt(mqtt_config, data)
         except LeapCardLoginError as e:
             log(f"LOGIN ERROR: {e}")
         except Exception as e:  # noqa: BLE001
