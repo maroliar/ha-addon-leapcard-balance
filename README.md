@@ -6,13 +6,6 @@ A Home Assistant Add-on that logs into [leapcard.ie](https://www.leapcard.ie) (T
   <img src="logo.png" width="128" alt="LeapCard Balance logo">
 </p>
 
-## Example
-
-<p align="center">
-  <img src="lovelace_example.png" width="500" alt="LeapCard Balance dashboard card example">
-</p>
-
-
 ## How authentication works
 
 leapcard.ie authenticates through Azure AD B2C, using a custom policy with a hybrid OAuth2/OIDC flow. Instead of a full form-post round trip through a browser, this add-on drives that flow directly over HTTP with `requests` + `BeautifulSoup`:
@@ -62,53 +55,31 @@ No browser engine is involved at any point — just a handful of well-understood
 
 ## Dashboard card (optional)
 
-This card requires the [html-template-card](https://github.com/PiotrMachowski/lovelace-html-template-card) custom card from HACS.
+`sensor.leapcard` works with any card that can read entity state/attributes — there's no required way to display it. Below is one suggestion, using the native Markdown card (built into Home Assistant, no HACS dependency). How you actually style it is entirely up to you.
 
 ```yaml
-type: custom:html-template-card
-ignore_line_breaks: true
-entities:
-  - sensor.leapcard
+type: markdown
+entity_id: sensor.leapcard
 content: |
-  <style>
-    body { font-family: sans-serif; padding: 20px; }
-    table { border-collapse: collapse; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-    th { background-color: #4CAF50; color: white; }
-    h1 { margin-bottom: 0.2em; }
-    h2 { margin-top: 1.5em; }
-    p { margin: 0.2em 0; }
-  </style>
-  <p><strong>Name: </strong>{{ state_attr('sensor.leapcard', 'name') }}</p>
-  <p><strong>Card: </strong>{{ state_attr('sensor.leapcard', 'card_number') }}</p>
-  <p><strong>Generated: </strong>{{ state_attr('sensor.leapcard', 'generated_at') }}</p>
-  <p><strong>Balance: </strong>€{{ states('sensor.leapcard') }}</p>
-  <h3>Transaction History</h3>
-  {% set transactions = state_attr('sensor.leapcard', 'history') %}
-  {% if transactions %}
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th><th>Time</th><th>Source</th><th>Transaction Type</th><th>Amount</th><th>Balance</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in transactions %}
-        <tr>
-          <td>{{ row.date }}</td>
-          <td>{{ row.time }}</td>
-          <td>{{ row.source }}</td>
-          <td>{{ row.transaction_type }}</td>
-          <td>€{{ row.amount | replace('€', '') }}</td>
-          <td>€{{ row.balance | replace('€', '') }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <p style="text-align:center;">No data found</p>
-  {% endif %}
+  **Name:** {{ state_attr('sensor.leapcard', 'name') }}
+  **Card:** {{ state_attr('sensor.leapcard', 'card_number') }}
+  **Generated:** {{ state_attr('sensor.leapcard', 'generated_at') }}
+  **Balance:** €{{ states('sensor.leapcard') }}
+
+  ### Transaction History
+  {% for row in state_attr('sensor.leapcard', 'history') %}
+  {% set t = 'Top-Up' in row.transaction_type %}
+  > **{{ row.source }}** ({{ row.transaction_type | replace('Travel Credit ', '') }})<br>Amount: {% if t %}+{% endif %}{{ row.amount }} · Balance: {{ row.balance }}<br><small>{{ row.date }} · {{ row.time }}</small>
+  {% endfor %}
 ```
+
+`content: |` (not `>`) matters — Markdown's syntax is whitespace-sensitive (headings and list items need their own line), so the block style has to preserve line breaks literally. The `entity_id: sensor.leapcard` line isn't decoration either: without it, Home Assistant sometimes can't detect which entity the template depends on, and the card won't refresh reliably.
+
+This is what it renders as, with sample data:
+
+<p align="center">
+  <img src="lovelace_example.svg" width="380" alt="LeapCard Balance dashboard card example">
+</p>
 
 > **Tip:** `sensor.leapcard` stores its full transaction history as an attribute, which the [recorder](https://www.home-assistant.io/integrations/recorder/) will snapshot on every update. If you want to avoid growing your database with repeated copies of the same list, exclude the entity from attribute history:
 > ```yaml
