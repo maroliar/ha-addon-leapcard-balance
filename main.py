@@ -60,7 +60,6 @@ def publish_to_mqtt(mqtt_config: dict, data: dict) -> None:
         "json_attributes_topic": ATTRIBUTES_TOPIC,
         "unit_of_measurement": "EUR",
         "device_class": "monetary",
-        "state_class": "measurement",
         "icon": "mdi:credit-card-outline",
         "device": DEVICE_INFO,
     }

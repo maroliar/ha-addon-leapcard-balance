@@ -1,5 +1,5 @@
 name: "LeapCard Balance"
-version: "0.2.0"
+version: "0.2.1"
 slug: "leapcard_balance"
 description: "Query LeapCard (TFI) balance and history"
 url: "https://github.com/maroliar/ha-addon-leapcard-balance"
