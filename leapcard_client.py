@@ -135,7 +135,7 @@ class LeapCardClient:
         selected_option = select.find("option", selected=True) or select.find("option")
         if not selected_option:
             raise LeapCardLoginError("Card selector dropdown has no options.")
-        # Option text looks like "1018366892 - leapcard" - keep just the number
+        # Option text looks like "1234556789 - leapcard" - keep just the number
         return selected_option.get_text(strip=True).split(" - ")[0].strip()
 
     def get_history(self) -> list[dict]:
